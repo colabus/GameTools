@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.ComponentModel;
@@ -28,7 +28,7 @@ sealed class Window : Form {
   var layout=new FlowLayoutPanel { Dock=DockStyle.Fill, Padding=new Padding(16), FlowDirection=FlowDirection.TopDown, WrapContents=false };
   layout.Controls.Add(new Label { Text="Speed factor (baseline × factor)", AutoSize=true }); layout.Controls.Add(factor);
   var row=new FlowLayoutPanel { Width=600, Height=40 }; var apply=new Button {Text="Apply"}; var disable=new Button {Text="Disable"}; var inspect=new Button {Text="Inspect",Width=100}; row.Controls.Add(apply); row.Controls.Add(disable); row.Controls.Add(inspect); layout.Controls.Add(row);
-  layout.Controls.Add(new Label {Text="Baseline: 2 / 0.5 / 0.25. Original trainer: 5× / 4× / 4×.",AutoSize=true}); layout.Controls.Add(relaxed); layout.Controls.Add(status); Controls.Add(layout);
+  layout.Controls.Add(new Label {Text="Baseline speed values: 2 / 0.5 / 0.25.",AutoSize=true}); layout.Controls.Add(relaxed); layout.Controls.Add(status); Controls.Add(layout);
   relaxed.CheckedChanged+=(s,e)=>{if(updating)return; try{animals.SetRelaxed(relaxed.Checked);lastError="";status.Text=animals.Status;}catch(Exception ex){lastError=ex.Message;status.Text=ex.Message;updating=true;relaxed.Checked=animals.RelaxedOwned;updating=false;}};
   var timer=new System.Windows.Forms.Timer {Interval=1000}; timer.Tick+=(s,e)=>{engine.ResetExited();if(animals.ResetExited()){updating=true;relaxed.Checked=false;updating=false;status.Text="Game exited. Always Relaxed Animals is off; enable again after restart.";}}; timer.Start();
   status.Text="No game memory has been changed.";
@@ -115,7 +115,7 @@ sealed class Engine : IDisposable {
  void Write(IntPtr p,byte[] b){IntPtr done;Check(WriteProcessMemory(handle,p,b,b.Length,out done),"Write memory at 0x"+p.ToInt64().ToString("X"));if(done.ToInt64()!=b.Length)throw new IOException("Incomplete memory write.");}
  void ProtectedWrite(IntPtr p,byte[] b){uint old;Check(VirtualProtectEx(handle,p,(UIntPtr)b.Length,0x40,out old),"Set temporary write protection at 0x"+p.ToInt64().ToString("X"));try{Write(p,b);Check(FlushInstructionCache(handle,p,(UIntPtr)b.Length),"Flush instruction cache at 0x"+p.ToInt64().ToString("X"));}finally{uint ignored;Check(VirtualProtectEx(handle,p,(UIntPtr)b.Length,old,out ignored),"Restore memory protection at 0x"+p.ToInt64().ToString("X"));}}
  static string Hex(byte[] b){return BitConverter.ToString(b).Replace("-"," ");}
- void Expect(IntPtr p,byte[] b){var actual=Read(p,b.Length);if(!actual.SequenceEqual(b))throw new InvalidOperationException("Mismatch at module RVA 0x"+(p.ToInt64()-module.ToInt64()).ToString("X")+".\r\nExpected: "+Hex(b)+"\r\nActual: "+Hex(actual)+"\r\nNo unknown patch will be overwritten. Inspect for details. A disabled original trainer may leave its hook installed; close it and restart the game.");}
+ void Expect(IntPtr p,byte[] b){var actual=Read(p,b.Length);if(!actual.SequenceEqual(b))throw new InvalidOperationException("Mismatch at module RVA 0x"+(p.ToInt64()-module.ToInt64()).ToString("X")+".\r\nExpected: "+Hex(b)+"\r\nActual: "+Hex(actual)+"\r\nNo unknown patch will be overwritten. Inspect for details. Close other tools that modify game memory and restart the game if needed.");}
  void RestoreKnown(IntPtr address,byte[] owned,byte[] original){var actual=Read(address,original.Length);if(actual.SequenceEqual(original))return;if(!actual.SequenceEqual(owned))throw new IOException("Rollback refused unknown bytes at 0x"+address.ToInt64().ToString("X")+". Keep the trainer open or restart the game; allocations have been retained.");ProtectedWrite(address,original);}
  public static string Diagnose(){var e=new Engine();try{e.Connect(0x410);e.LoadImage();var report=new StringBuilder();
   report.AppendLine("READ-ONLY INSPECTION — no writes or thread suspension.");var path=e.process.MainModule.FileName;
@@ -135,7 +135,7 @@ sealed class Engine : IDisposable {
  void Connect(int access){ResetExited();if(handle!=IntPtr.Zero)return;var ps=Process.GetProcessesByName("theHunterCotW_F");if(ps.Length!=1){foreach(var p in ps)p.Dispose();throw new InvalidOperationException("Start exactly one theHunterCotW_F.exe instance.");}
   process=ps[0];try{module=process.MainModule.BaseAddress;handle=OpenProcess(access,false,process.Id);Check(handle!=IntPtr.Zero,"Open game process");}catch{Dispose();process.Dispose();process=null;throw;}}
  void Attach(){Connect(0x438);if(enabled){if(Scan(SpeedSignature,0x1c,"Super Speed")!=Hook)throw new IOException("Super Speed signature moved in the attached process. Refusing factor update.");return;}
-  try{LoadImage();Hook=Scan(SpeedSignature,0x1c,"Super Speed");if(Cave==0)throw new IOException("No safe unused PE header padding for the existing speed trampoline.");
+  try{LoadImage();Hook=Scan(SpeedSignature,0x1c,"Super Speed");if(Cave==0)throw new IOException("No safe unused PE header padding for the speed trampoline.");
    Expect(Add(module,Hook),Original);savedCave=Read(Add(module,Cave),14);savedControl=Read(Add(module,Control),2);
    if(savedCave.Concat(savedControl).Any(x=>x!=0))throw new IOException("Speed trampoline padding is occupied. No third-party patch will be overwritten.");
   }catch{Dispose();throw;}
@@ -265,6 +265,7 @@ sealed class Assembler {
  public void Jump(byte condition,string target){Bytes(0x0f,condition);fix.Add(Tuple.Create(b.Count,target));Int(0);}public void Jump(string target){Bytes(0xe9);fix.Add(Tuple.Create(b.Count,target));Int(0);}
  public byte[] Finish(){var result=b.ToArray();foreach(var f in fix)Array.Copy(BitConverter.GetBytes(labels[f.Item2]-f.Item1-4),0,result,f.Item1,4);return result;}
 }
+
 
 
 
